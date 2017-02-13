@@ -19,6 +19,17 @@ var LetterDepth = map[int]string{
 	8: "H",
 }
 
+var LetterDepthWithHeuristic = map[int]string{
+	1: "H",
+	2: "F",
+	3: "G",
+	4: "D",
+	5: "E",
+	6: "C",
+	7: "A",
+	8: "B",
+}
+
 type Root struct {
 	Children [4]*Node
 	Depth    int
@@ -67,6 +78,11 @@ func (root *Root) GenerateTree() {
 	root.IncreaseSearchDepth()
 }
 
+func (root *Root) GenerateTreeWithHeuristic() {
+	root.PruneWithHeuristic()
+	root.IncreaseSearchDepthWithHeuristic()
+}
+
 // Generates a slice of slices. All of the inner slices are paths from the root to a leaf node.
 // Example: [ [path1], [path2], [path3] ], where path-n is a slice of Nodes
 func (root *Root) GeneratePaths() [][]*Node {
@@ -93,7 +109,7 @@ func (root *Root) GeneratePaths() [][]*Node {
 		return paths
 	}
 	for _, child := range root.Children {
-		paths = append(paths, getPaths(child, path)...)
+		getPaths(child, path)
 	}
 	//return getPaths(root.Children[0], path)
 	return paths
@@ -107,6 +123,16 @@ func (root *Root) Prune() {
 
 	for i := 0; i < len(paths); i++ {
 		if CheckConstraints(paths[i]) != true {
+			paths[i][len(paths[i])-1].MarkTombstone()
+		}
+	}
+}
+
+func (root *Root) PruneWithHeuristic() {
+	paths := root.GeneratePaths()
+
+	for i := 0; i < len(paths); i++ {
+		if CheckConstraintsUsingSelectionHeuristic(paths[i]) != true {
 			paths[i][len(paths[i])-1].MarkTombstone()
 		}
 	}
@@ -142,6 +168,21 @@ func (root *Root) IncreaseSearchDepth() {
 	}
 	root.Depth += 1
 	variableToAssign := LetterDepth[root.Depth]
+	for _, node := range root.Children {
+		if node.Children == nil {
+			node.AddVariableLayer(variableToAssign)
+		} else {
+			RecursivelyAddVariableLayer(node, variableToAssign)
+		}
+	}
+}
+
+func (root *Root) IncreaseSearchDepthWithHeuristic() {
+	if root == nil || root.Depth == 8 {
+		return
+	}
+	root.Depth += 1
+	variableToAssign := LetterDepthWithHeuristic[root.Depth]
 	for _, node := range root.Children {
 		if node.Children == nil {
 			node.AddVariableLayer(variableToAssign)
@@ -232,6 +273,86 @@ func CheckConstraints(variables []*Node) bool {
 	return true
 }
 
+// Version with a selection heuristic. This one adds layers ordered by descending number of constraints
+// that a given variable is involved in. H is involved in the most, followed by F, and so on, with B only being involved in 1 constraint.
+// This way we can fail sooner than using the original A to H ordering.
+// As an aside, I should figure out a more generic way to check constraints where the ordering can just be passed as an argument.
+// Ordering: H, F, G, D, E, C, A, B.
+// variables[0].Variable == H
+// variables[1].Variable == F
+// variables[2].Variable == G
+// variables[3].Variable == D
+// variables[4].Variable == E
+// variables[5].Variable == C
+// variables[6].Variable == A
+// variables[7].Variable == B
+
+func CheckConstraintsUsingSelectionHeuristic(variables []*Node) bool {
+
+	switch len(variables) {
+	case 2:
+		if variables[0].Variable.Value == variables[1].Variable.Value {
+			return false
+		}
+	case 3:
+		if variables[2].Variable.Value >= variables[0].Variable.Value {
+			return false
+		}
+		if variables[2].Variable.Value == variables[1].Variable.Value {
+			return false
+		}
+	case 4:
+		if variables[0].Variable.Value == variables[3].Variable.Value {
+			return false
+		}
+		if variables[3].Variable.Value <= variables[2].Variable.Value {
+			return false
+		}
+		if variables[3].Variable.Value == variables[1].Variable.Value {
+			return false
+		}
+	case 5:
+		if variables[4].Variable.Value >= variables[3].Variable.Value-1 {
+			return false
+		}
+		if AbsoluteValue(variables[4].Variable.Value-variables[1].Variable.Value)%2 == 0 {
+			return false
+		}
+		if variables[4].Variable.Value == variables[0].Variable.Value-2 {
+			return false
+		}
+	case 6:
+		if AbsoluteValue(variables[2].Variable.Value-variables[5].Variable.Value) != 1 {
+			return false
+		}
+		if AbsoluteValue(variables[0].Variable.Value-variables[5].Variable.Value)%2 != 0 {
+			return false
+		}
+		if variables[3].Variable.Value == variables[5].Variable.Value {
+			return false
+		}
+		if variables[4].Variable.Value == variables[5].Variable.Value {
+			return false
+		}
+		if variables[5].Variable.Value == variables[1].Variable.Value {
+			return false
+		}
+
+	case 7:
+		if variables[6].Variable.Value <= variables[2].Variable.Value {
+			return false
+		}
+		if variables[6].Variable.Value > variables[0].Variable.Value {
+			return false
+		}
+	case 8:
+		if AbsoluteValue(variables[1].Variable.Value-variables[7].Variable.Value) != 1 {
+			return false
+		}
+	}
+	return true
+}
+
 //-------------- HELPERS -------------------//
 func AbsoluteValue(a int) int {
 	if a < 0 {
@@ -246,11 +367,38 @@ func (node *Node) String() string {
 	return node.Variable.Letter + ":" + strconv.Itoa(node.Variable.Value)
 }
 
+func RemoveDuplicates(nodes *[]*Node) {
+	encountered := make(map[*Node]bool)
+	j := 0
+	for i, x := range *nodes {
+		if !encountered[x] {
+			encountered[x] = true
+			(*nodes)[j] = (*nodes)[i]
+			j++
+		}
+	}
+	*nodes = (*nodes)[:j]
+}
+
 func (root *Root) PrintValidPaths() {
 	paths := root.GeneratePaths()
 	var validPaths [][]*Node
 	for _, path := range paths {
 		if path[len(path)-1].Variable.Letter == "H" && path[len(path)-1].Tombstone == false {
+			validPaths = append(validPaths, path)
+		}
+	}
+	fmt.Println("Valid paths:")
+	for _, p := range validPaths {
+		fmt.Printf("%v\n", p)
+	}
+}
+
+func (root *Root) PrintValidPathsWithHeuristic() {
+	paths := root.GeneratePaths()
+	var validPaths [][]*Node
+	for _, path := range paths {
+		if path[len(path)-1].Variable.Letter == "B" && path[len(path)-1].Tombstone == false {
 			validPaths = append(validPaths, path)
 		}
 	}
@@ -282,5 +430,16 @@ func main() {
 
 	root.PrintValidPaths()
 	root.ReportInvalidPaths()
+
+	heuristicRoot := Root{}
+	heuristicRoot.Depth = 1
+	heuristicRoot.PopulateRoot("H")
+
+	for i := 0; i < 8; i++ {
+		heuristicRoot.GenerateTreeWithHeuristic()
+	}
+
+	heuristicRoot.PrintValidPathsWithHeuristic()
+	heuristicRoot.ReportInvalidPaths()
 
 }
