@@ -7,6 +7,7 @@ import (
 
 const maximumDepth = 8
 
+// Used to represent what variables exist at a given depth of the tree
 var LetterDepth = map[int]string{
 	1: "A",
 	2: "B",
@@ -23,6 +24,7 @@ type Root struct {
 	Depth    int
 }
 
+// Tombstone used to mark a dead end path with a constraint violation
 type Node struct {
 	Variable  *Variable
 	Children  []*Node
@@ -34,11 +36,13 @@ type Variable struct {
 	Value  int
 }
 
+// Node constructor
 func NewNode(variableLetter string) *Node {
 	variable := NewVariable(variableLetter, 0)
 	return &Node{variable, nil, false}
 }
 
+// Variable Constructor
 func NewVariable(variableLetter string, value int) *Variable {
 	return &Variable{variableLetter, value}
 }
@@ -56,12 +60,15 @@ func (node *Node) MarkTombstone() {
 	node.Tombstone = true
 }
 
-// Where the real work goes on
+// Where the real work goes on. On each call to GenerateTree(), the search space gets pruned, and then the next layer of variables gets added
+// to any paths that haven't failed yet
 func (root *Root) GenerateTree() {
 	root.Prune()
 	root.IncreaseSearchDepth()
 }
 
+// Generates a slice of slices. All of the inner slices are paths from the root to a leaf node.
+// Example: [ [path1], [path2], [path3] ], where path-n is a slice of Nodes
 func (root *Root) GeneratePaths() [][]*Node {
 	var path []*Node
 	var paths [][]*Node
@@ -92,6 +99,9 @@ func (root *Root) GeneratePaths() [][]*Node {
 	return paths
 }
 
+// Generate all root-leaf paths in the search space, and for each one check if a constraint has been violated. If it has, mark
+// the tombstone of the last node in that path to indicate a dead end. This path will no longer be expanded
+
 func (root *Root) Prune() {
 	paths := root.GeneratePaths()
 
@@ -111,6 +121,7 @@ func (node *Node) AddVariableLayer(variableLetter string) {
 	}
 }
 
+// Recursive helper function
 func RecursivelyAddVariableLayer(node *Node, variableLetter string) {
 	// don't add a layer if we've marked this as a dead end
 	if node.Children == nil && node.Tombstone != true {
@@ -123,6 +134,8 @@ func RecursivelyAddVariableLayer(node *Node, variableLetter string) {
 
 }
 
+// Increases depth of the search space by one, adding 4 new child nodes to each node whose tombstone is not marked, meaning we
+// want to continue exploring this path for a model state.
 func (root *Root) IncreaseSearchDepth() {
 	if root == nil || root.Depth == 8 {
 		return
@@ -230,7 +243,7 @@ func AbsoluteValue(a int) int {
 //-------------- PRINTING RESULTS -------------------//
 
 func (node *Node) String() string {
-	return node.Variable.Letter + ":" + strconv.Itoa(node.Variable.Value) + " " + strconv.FormatBool(node.Tombstone)
+	return node.Variable.Letter + ":" + strconv.Itoa(node.Variable.Value)
 }
 
 func (root *Root) PrintValidPaths() {
